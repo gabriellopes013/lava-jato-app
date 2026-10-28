@@ -4,20 +4,10 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { supabase } from '../services/supabase';
 
-// Imports das telas oficiais do Admin
+// Imports das telas
+import AdminAppointmentsScreen from './AdminAppointmentsScreen';
 import AdminServicesScreen from './AdminServicesScreen';
 import AdminOperatingHoursScreen from './AdminOperatingHoursScreen';
-
-// Componente temporário apenas para o Painel/Fila
-function AppointmentsDashboardScreen() {
-  return (
-    <View style={styles.centerTab}>
-      <FontAwesome5 name="list-alt" size={48} color="#334155" />
-      <Text style={styles.tabTitle}>Painel de Agendamentos</Text>
-      <Text style={styles.tabSubtitle}>Em breve você verá e gerenciará os agendamentos de todos os clientes aqui.</Text>
-    </View>
-  );
-}
 
 const Tab = createBottomTabNavigator();
 
@@ -59,8 +49,8 @@ export default function AdminHomeScreen({ navigation }: any) {
             fontWeight: '600',
           },
           tabBarIcon: ({ color, size }) => {
-            if (route.name === 'Fila') {
-              return <FontAwesome5 name="tasks" size={size - 2} color={color} />;
+            if (route.name === 'Agendamentos') {
+              return <FontAwesome5 name="calendar-alt" size={size - 2} color={color} />;
             } else if (route.name === 'Serviços') {
               return <FontAwesome5 name="concierge-bell" size={size - 2} color={color} />;
             } else if (route.name === 'Horários') {
@@ -69,7 +59,7 @@ export default function AdminHomeScreen({ navigation }: any) {
           },
         })}
       >
-        <Tab.Screen name="Fila" component={AppointmentsDashboardScreen} />
+        <Tab.Screen name="Agendamentos" component={AdminAppointmentsScreen} />
         <Tab.Screen name="Serviços" component={AdminServicesScreen} />
         <Tab.Screen name="Horários" component={AdminOperatingHoursScreen} />
       </Tab.Navigator>
@@ -112,25 +102,5 @@ const styles = StyleSheet.create({
     color: '#ef4444',
     fontSize: 13,
     fontWeight: '600',
-  },
-  centerTab: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  tabTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#f1f5f9',
-    marginTop: 16,
-  },
-  tabSubtitle: {
-    fontSize: 14,
-    color: '#94a3b8',
-    textAlign: 'center',
-    marginTop: 8,
-    maxWidth: 300,
   },
 });

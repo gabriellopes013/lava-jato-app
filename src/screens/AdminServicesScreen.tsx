@@ -105,31 +105,39 @@ export default function AdminServicesScreen() {
     }
   };
 
+  // Alterna o status instantaneamente sem recarregar a lista inteira
   const handleToggleActive = async (id: string, currentStatus: boolean) => {
+    const nextStatus = !currentStatus;
+
+    // 1. Atualização Otimista na tela (efeito instantâneo)
+    setServices((prevServices) =>
+      prevServices.map((service) =>
+        service.id === id ? { ...service, active: nextStatus } : service
+      )
+    );
+
+    // 2. Persistência silenciosa no banco de dados
     try {
-      await updateAdminService(id, { active: !currentStatus });
-      loadServices();
+      await updateAdminService(id, { active: nextStatus });
     } catch (error) {
-      Alert.alert('Erro', 'Não foi possível alterar o status.');
+      // Reverte em caso de falha de rede
+      setServices((prevServices) =>
+        prevServices.map((service) =>
+          service.id === id ? { ...service, active: currentStatus } : service
+        )
+      );
+      Alert.alert('Erro', 'Não foi possível alterar o status do serviço.');
     }
   };
 
-  const handleDelete = (id: string, serviceName: string) => {
-    Alert.alert('Remover Serviço', `Deseja apagar "${serviceName}"?`, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Apagar',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteAdminService(id);
-            loadServices();
-          } catch (error) {
-            Alert.alert('Erro', 'Falha ao deletar serviço.');
-          }
-        },
-      },
-    ]);
+  // Exclusão Direta ao Clicar
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteAdminService(id);
+      loadServices();
+    } catch (error) {
+      Alert.alert('Erro', 'Falha ao deletar serviço.');
+    }
   };
 
   return (
@@ -184,7 +192,7 @@ export default function AdminServicesScreen() {
                   <FontAwesome5 name="pen" size={14} color="#38bdf8" />
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={() => handleDelete(item.id!, item.name)} style={styles.actionBtn}>
+                <TouchableOpacity onPress={() => handleDelete(item.id!)} style={styles.actionBtn}>
                   <FontAwesome5 name="trash-alt" size={14} color="#ef4444" />
                 </TouchableOpacity>
               </View>

@@ -34,8 +34,7 @@ export default function AppointmentsScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Modal do Calendário Completo
-  const [calendarModalVisible, setCalendarModalVisible] = useState(false);
+  // Mês e Data do Calendário Completo
   const [currentCalendarMonth, setCurrentCalendarMonth] = useState<Date>(new Date());
 
   // Estados do Agendamento Passo a Passo
@@ -54,27 +53,26 @@ export default function AppointmentsScreen() {
   const fadeStep3 = useRef(new Animated.Value(0)).current;
   const fadeStep4 = useRef(new Animated.Value(0)).current;
 
-  // Animações de Deslocamento (Slide In Suave)
+  // Animações de Deslocamento (Slide In)
   const translateYStep2 = useRef(new Animated.Value(20)).current;
   const translateYStep3 = useRef(new Animated.Value(20)).current;
   const translateYStep4 = useRef(new Animated.Value(20)).current;
 
-  // Função para acionar o efeito Fade + Slide com velocidade mais suave (700ms)
   const triggerFadeAndSlide = (opacityVal: Animated.Value, translateVal: Animated.Value) => {
     opacityVal.setValue(0);
     translateVal.setValue(20);
 
-    const useNative = Platform.OS !== 'web'; // Desativa nativeDriver na Web para tirar o Warning
+    const useNative = Platform.OS !== 'web';
 
     Animated.parallel([
       Animated.timing(opacityVal, {
         toValue: 1,
-        duration: 1000, // Duração aumentada para aparição mais lenta
+        duration: 800,
         useNativeDriver: useNative,
       }),
       Animated.timing(translateVal, {
         toValue: 0,
-        duration: 1000,
+        duration: 800,
         useNativeDriver: useNative,
       }),
     ]).start();
@@ -108,13 +106,13 @@ export default function AppointmentsScreen() {
       const vehData = await getVehicles();
       setVehicles(vehData);
 
-      // Reseta os passos e animações
       setSelectedVehicle(null);
       setSelectedService(null);
       setAvailableServices([]);
       setSelectedDate(null);
       setSelectedSlot('');
-      
+      setCurrentCalendarMonth(new Date());
+
       fadeStep2.setValue(0);
       fadeStep3.setValue(0);
       fadeStep4.setValue(0);
@@ -124,7 +122,7 @@ export default function AppointmentsScreen() {
     setModalVisible(true);
   };
 
-  // Passo 1: Seleção de Veículo -> Revela Passo 2
+  // Passo 1: Seleção de Veículo
   const handleSelectVehicle = async (vehicle: Vehicle) => {
     setSelectedVehicle(vehicle);
     setSelectedService(null);
@@ -144,17 +142,19 @@ export default function AppointmentsScreen() {
     }
   };
 
-  // Passo 2: Seleção de Serviço -> Revela Passo 3 e 4
+  // Passo 2: Seleção de Serviço
   const handleSelectService = (service: Service) => {
     setSelectedService(service);
-    setSelectedDate(new Date());
+    const today = new Date();
+    setSelectedDate(today);
+    setCurrentCalendarMonth(today);
     setSelectedSlot('');
 
     triggerFadeAndSlide(fadeStep3, translateYStep3);
     triggerFadeAndSlide(fadeStep4, translateYStep4);
   };
 
-  // Recalcular horários
+  // Recalcular horários quando data ou serviço mudarem
   useEffect(() => {
     if (!selectedService || !selectedDate) return;
 
@@ -207,25 +207,17 @@ export default function AppointmentsScreen() {
     }
   };
 
-  const handleCancel = (id: string) => {
-    Alert.alert('Cancelar Agendamento', 'Deseja realmente cancelar este agendamento?', [
-      { text: 'Não', style: 'cancel' },
-      {
-        text: 'Sim, Cancelar',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await cancelAppointment(id);
-            loadData();
-          } catch (error) {
-            Alert.alert('Erro', 'Não foi possível cancelar.');
-          }
-        },
-      },
-    ]);
+  // Cancelamento Direto sem Alerta
+  const handleCancel = async (id: string) => {
+    try {
+      await cancelAppointment(id);
+      loadData();
+    } catch (error) {
+      Alert.alert('Erro', 'Não foi possível cancelar.');
+    }
   };
 
-  // Renderizador do Calendário
+  // Renderizador do Calendário Completo Incorporado
   const renderCalendarDays = () => {
     const year = currentCalendarMonth.getFullYear();
     const month = currentCalendarMonth.getMonth();
@@ -258,7 +250,6 @@ export default function AppointmentsScreen() {
           ]}
           onPress={() => {
             setSelectedDate(dateForDay);
-            setCalendarModalVisible(false);
             triggerFadeAndSlide(fadeStep4, translateYStep4);
           }}
         >
@@ -357,7 +348,7 @@ export default function AppointmentsScreen() {
         />
       )}
 
-      {/* MODAL PASSO A PASSO COM ANIMACAO SUAVE */}
+      {/* MODAL PRINCIPAL */}
       <Modal visible={modalVisible} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
@@ -386,7 +377,7 @@ export default function AppointmentsScreen() {
                 ))
               )}
 
-              {/* PASSO 2: Seleção do Serviço (Fade + Slide) */}
+              {/* PASSO 2: Seleção do Serviço */}
               {selectedVehicle && (
                 <Animated.View style={{ opacity: fadeStep2, transform: [{ translateY: translateYStep2 }] }}>
                   <Text style={[styles.label, { marginTop: 16 }]}>2. Selecione o Serviço *</Text>
@@ -414,35 +405,43 @@ export default function AppointmentsScreen() {
                 </Animated.View>
               )}
 
-              {/* PASSO 3: Escolha da Data (Fade + Slide) */}
+              {/* PASSO 3: Calendário Completo Incorporado no Modal */}
               {selectedService && selectedDate && (
                 <Animated.View style={{ opacity: fadeStep3, transform: [{ translateY: translateYStep3 }] }}>
-                  <Text style={[styles.label, { marginTop: 16 }]}>3. Escolha a Data *</Text>
+                  <Text style={[styles.label, { marginTop: 16 }]}>3. Escolha a Data no Calendário *</Text>
 
-                  <TouchableOpacity
-                    style={styles.calendarPickerBtn}
-                    onPress={() => {
-                      setCurrentCalendarMonth(selectedDate);
-                      setCalendarModalVisible(true);
-                    }}
-                  >
-                    <View style={styles.calendarBtnLeft}>
-                      <FontAwesome5 name="calendar-alt" size={18} color="#34d399" style={{ marginRight: 12 }} />
-                      <Text style={styles.calendarBtnDateText}>
-                        {selectedDate.toLocaleDateString('pt-BR', {
-                          weekday: 'long',
-                          day: 'numeric',
-                          month: 'long',
-                          year: 'numeric',
-                        })}
+                  <View style={styles.calendarContainer}>
+                    {/* Cabeçalho de Navegação do Mês */}
+                    <View style={styles.monthHeaderRow}>
+                      <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth('prev')}>
+                        <FontAwesome5 name="chevron-left" size={12} color="#34d399" />
+                      </TouchableOpacity>
+
+                      <Text style={styles.monthTitleText}>
+                        {currentCalendarMonth.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}
                       </Text>
+
+                      <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth('next')}>
+                        <FontAwesome5 name="chevron-right" size={12} color="#34d399" />
+                      </TouchableOpacity>
                     </View>
-                    <FontAwesome5 name="chevron-right" size={14} color="#64748b" />
-                  </TouchableOpacity>
+
+                    {/* Dias da Semana */}
+                    <View style={styles.weekDaysRow}>
+                      {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((d) => (
+                        <Text key={d} style={styles.weekDayHeader}>{d}</Text>
+                      ))}
+                    </View>
+
+                    {/* Matriz dos Dias */}
+                    <View style={styles.daysGrid}>
+                      {renderCalendarDays()}
+                    </View>
+                  </View>
                 </Animated.View>
               )}
 
-              {/* PASSO 4: Horários e Confirmação (Fade + Slide) */}
+              {/* PASSO 4: Horários e Botão Confirmar */}
               {selectedService && selectedDate && (
                 <Animated.View style={{ opacity: fadeStep4, transform: [{ translateY: translateYStep4 }] }}>
                   {isClosedDay ? (
@@ -450,7 +449,7 @@ export default function AppointmentsScreen() {
                       <FontAwesome5 name="store-slash" size={20} color="#ef4444" style={{ marginBottom: 6 }} />
                       <Text style={styles.closedTitle}>Estabelecimento Fechado</Text>
                       <Text style={styles.closedText}>
-                        O lava-jato não funciona nesta data. Selecione outro dia no calendário.
+                        O lava-jato não funciona nesta data. Selecione outro dia no calendário acima.
                       </Text>
                     </View>
                   ) : (
@@ -489,44 +488,6 @@ export default function AppointmentsScreen() {
           </View>
         </View>
       </Modal>
-
-      {/* MODAL CALENDÁRIO */}
-      <Modal visible={calendarModalVisible} animationType="fade" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.calendarModalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Selecione a Data</Text>
-              <TouchableOpacity onPress={() => setCalendarModalVisible(false)}>
-                <FontAwesome5 name="times" size={18} color="#94a3b8" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.monthHeaderRow}>
-              <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth('prev')}>
-                <FontAwesome5 name="chevron-left" size={14} color="#34d399" />
-              </TouchableOpacity>
-
-              <Text style={styles.monthTitleText}>
-                {currentCalendarMonth.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}
-              </Text>
-
-              <TouchableOpacity style={styles.monthNavBtn} onPress={() => changeMonth('next')}>
-                <FontAwesome5 name="chevron-right" size={14} color="#34d399" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.weekDaysRow}>
-              {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((d) => (
-                <Text key={d} style={styles.weekDayHeader}>{d}</Text>
-              ))}
-            </View>
-
-            <View style={styles.daysGrid}>
-              {renderCalendarDays()}
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -551,8 +512,7 @@ const styles = StyleSheet.create({
   priceText: { color: '#34d399', fontSize: 16, fontWeight: 'bold' },
   cancelText: { color: '#ef4444', fontSize: 13, fontWeight: '600' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.8)', justifyContent: 'center', padding: 20 },
-  modalCard: { backgroundColor: '#1e293b', borderRadius: 16, borderWidth: 1, borderColor: '#334155', padding: 20, maxHeight: '85%' },
-  calendarModalCard: { backgroundColor: '#1e293b', borderRadius: 16, borderWidth: 1, borderColor: '#334155', padding: 20 },
+  modalCard: { backgroundColor: '#1e293b', borderRadius: 16, borderWidth: 1, borderColor: '#334155', padding: 20, maxHeight: '88%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#f1f5f9' },
   label: { fontSize: 13, fontWeight: 'bold', color: '#cbd5e1', marginBottom: 8 },
@@ -564,19 +524,17 @@ const styles = StyleSheet.create({
   durationText: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
   servicePrice: { color: '#34d399', fontWeight: 'bold', fontSize: 14 },
   warningText: { color: '#f59e0b', fontSize: 13, marginBottom: 12 },
-  calendarPickerBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#334155', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 14, marginBottom: 8 },
-  calendarBtnLeft: { flexDirection: 'row', alignItems: 'center' },
-  calendarBtnDateText: { color: '#ffffff', fontSize: 14, fontWeight: 'bold', textTransform: 'capitalize' },
-  monthHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  monthNavBtn: { padding: 10, backgroundColor: '#0f172a', borderRadius: 8, borderWidth: 1, borderColor: '#334155' },
-  monthTitleText: { color: '#f1f5f9', fontWeight: 'bold', fontSize: 15 },
-  weekDaysRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  weekDayHeader: { width: '14.28%', textAlign: 'center', color: '#64748b', fontSize: 12, fontWeight: 'bold' },
+  calendarContainer: { backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#334155', borderRadius: 12, padding: 12, marginBottom: 8 },
+  monthHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  monthNavBtn: { padding: 8, backgroundColor: '#1e293b', borderRadius: 6, borderWidth: 1, borderColor: '#334155' },
+  monthTitleText: { color: '#f1f5f9', fontWeight: 'bold', fontSize: 13 },
+  weekDaysRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  weekDayHeader: { width: '14.28%', textAlign: 'center', color: '#64748b', fontSize: 11, fontWeight: 'bold' },
   daysGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  calendarDayCell: { width: '14.28%', height: 42, justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
-  calendarDaySelected: { backgroundColor: '#34d399', borderRadius: 8 },
+  calendarDayCell: { width: '14.28%', height: 38, justifyContent: 'center', alignItems: 'center', marginBottom: 2 },
+  calendarDaySelected: { backgroundColor: '#34d399', borderRadius: 6 },
   calendarDayDisabled: { opacity: 0.2 },
-  calendarDayNum: { color: '#ffffff', fontSize: 14, fontWeight: 'bold' },
+  calendarDayNum: { color: '#ffffff', fontSize: 13, fontWeight: 'bold' },
   calendarDayTextSelected: { color: '#0f172a' },
   calendarDayTextDisabled: { color: '#64748b' },
   closedBox: { backgroundColor: 'rgba(239, 68, 68, 0.1)', borderWidth: 1, borderColor: 'rgba(239, 68, 68, 0.3)', borderRadius: 8, padding: 14, alignItems: 'center', marginTop: 8 },
