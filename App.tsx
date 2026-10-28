@@ -1,12 +1,14 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { LogBox } from 'react-native';
 
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import ClientHomeScreen from './src/screens/ClientHomeScreen';
 import AdminHomeScreen from './src/screens/AdminHomeScreen';
 
+LogBox.ignoreLogs(['[Reanimated] Dependencies should only be used on the web']);
 const Stack = createNativeStackNavigator();
 
 export default function App() {

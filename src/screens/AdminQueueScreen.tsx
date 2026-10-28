@@ -3,42 +3,80 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import { supabase } from '../services/supabase';
 
-export default function AdminQueueScreen({ route, navigation }: any) {
-  // Recebe o agendamento vindo da navegação (caso enviado)
-  const initialAppointment = route?.params?.appointment;
-
-  const [queueItems, setQueueItems] = useState<any[]>([]);
+export default function AdminQueueScreen() {
+  const [activeTab, setActiveTab] = useState<'in_queue' | 'in_progress' | 'completed'>('in_queue');
+  const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedItem, setSelectedItem] = useState<any>(initialAppointment || null);
 
-  // Carrega a fila de lavagem do banco
-  const loadQueue = async () => {
+  const getTodayISO = () => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  };
+
+  const loadQueueData = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('appointments')
-        .select('*')
-        .in('status', ['pending', 'aguardando', 'em_lavagem', 'finalizado', 'in_progress', 'completed'])
-        .order('scheduled_at', { ascending: true });
 
+      const { data: rawAppointments, error } = await supabase.from('appointments').select('*');
       if (error) throw error;
 
-      // Se recebemos um item via parâmetro e ele não está na lista selecionada, definimos ele
-      if (initialAppointment && !selectedItem) {
-        setSelectedItem(initialAppointment);
-      }
+      // Busca os veículos e perfis de forma segura um a um ou em lote limpo
+      const formatted = await Promise.all(
+        (rawAppointments || []).map(async (item: any) => {
+          let veh: any = {};
+          let prof: any = {};
 
-      setQueueItems(data || []);
+          if (item.vehicle_id) {
+            const { data: vData } = await supabase.from('vehicles').select('*').eq('id', item.vehicle_id).single();
+            if (vData) veh = vData;
+          }
+
+          if (item.user_id) {
+            const { data: pData } = await supabase.from('profiles').select('*').eq('id', item.user_id).single();
+            if (pData) prof = pData;
+          }
+
+          let dateISO = '';
+          if (item.scheduled_at) {
+            const d = new Date(item.scheduled_at);
+            if (!isNaN(d.getTime())) {
+              dateISO = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            }
+          }
+
+          let durationText = '--';
+          if (item.started_at && item.finished_at) {
+            const start = new Date(item.started_at).getTime();
+            const finish = new Date(item.finished_at).getTime();
+            const diffMinutes = Math.floor((finish - start) / (1000 * 60));
+            durationText = diffMinutes >= 60 ? `${Math.floor(diffMinutes / 60)}h ${diffMinutes % 60}min` : `${diffMinutes} min`;
+          }
+
+          return {
+            id: item.id,
+            user_name: prof.full_name || item.user_name || 'Cliente Sem Nome',
+            user_phone: prof.phone || item.user_phone || 'Sem telefone',
+            plate: (veh.plate || item.plate || 'SEM PLACA').toUpperCase(),
+            brand: veh.brand || item.brand || '',
+            model: veh.model || item.model || 'Veículo',
+            service_title: item.service_type || 'Serviço Geral',
+            status: item.status || 'pending',
+            dateStr: dateISO,
+            washer_name: item.washer_name || 'Lavador Automático',
+            durationText,
+          };
+        })
+      );
+
+      setAppointments(formatted);
     } catch (error) {
       console.error('Erro ao carregar fila:', error);
     } finally {
@@ -46,199 +84,158 @@ export default function AdminQueueScreen({ route, navigation }: any) {
     }
   };
 
-  useEffect(() => {
-    loadQueue();
-  }, []);
+  useEffect(() => { loadQueueData(); }, []);
 
-  // Atualiza o status do veículo no Supabase
-  const handleUpdateStatus = async (id: string, newStatus: string) => {
-    try {
-      setQueueItems((prev) =>
-        prev.map((item) => (item.id === id ? { ...item, status: newStatus } : item))
-      );
+  const todayStr = getTodayISO();
 
-      if (selectedItem?.id === id) {
-        setSelectedItem((prev: any) => ({ ...prev, status: newStatus }));
-      }
+  const waitingList = appointments.filter((a) => a.dateStr === todayStr && a.status === 'in_queue');
+  const washingList = appointments.filter((a) => a.dateStr === todayStr && a.status === 'in_progress');
+  const finishedList = appointments.filter((a) => a.dateStr === todayStr && a.status === 'completed');
 
-      const { error } = await supabase
-        .from('appointments')
-        .update({ status: newStatus })
-        .eq('id', id);
-
-      if (error) {
-        console.error('Erro ao atualizar status:', error);
-        loadQueue();
-      }
-    } catch (error) {
-      console.error('Erro ao mudar status:', error);
-    }
-  };
-
-  // Helper para rótulo e cor do status
-  const getStatusBadge = (status: string) => {
-    const s = (status || '').toLowerCase();
-    if (s === 'in_progress' || s === 'em_lavagem') {
-      return { label: 'EM LAVAGEM', bg: '#0284c7', color: '#ffffff' };
-    }
-    if (s === 'completed' || s === 'finalizado') {
-      return { label: 'FINALIZADO', bg: '#16a34a', color: '#ffffff' };
-    }
-    return { label: 'AGUARDANDO', bg: '#eab308', color: '#0f172a' };
-  };
+  const currentList = activeTab === 'in_queue' ? waitingList : activeTab === 'in_progress' ? washingList : finishedList;
 
   return (
     <View style={styles.container}>
-      {/* Header */}
+      {/* Header alinhado corretamente igual às outras telas */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation?.goBack()}>
-          <FontAwesome5 name="arrow-left" size={14} color="#ffffff" />
-        </TouchableOpacity>
-        <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={styles.headerTitle}>Fila de Lavagem</Text>
-          <Text style={styles.headerSubtitle}>Gerenciamento de pátio e check-in</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Painel do Pátio</Text>
+          <Text style={styles.headerSubtitle}>Monitor de Operação (Check-ins do Dia)</Text>
         </View>
-        <TouchableOpacity style={styles.refreshBtn} onPress={loadQueue}>
+        <TouchableOpacity style={styles.refreshBtn} onPress={loadQueueData}>
           <FontAwesome5 name="sync-alt" size={14} color="#ffffff" />
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
-        {/* Painel do Veículo Selecionado com QR Code Explícito */}
-        {selectedItem ? (
-          <View style={styles.qrCardContainer}>
-            <View style={styles.qrCardHeader}>
-              <View>
-                <Text style={styles.qrCardTitle}>
-                  {selectedItem.brand} {selectedItem.model}
-                </Text>
-                <Text style={styles.qrCardSub}>
-                  {selectedItem.user_name || 'Cliente'} • {selectedItem.user_phone || 'Sem fone'}
-                </Text>
+      {/* Navegação de Abas Responsiva */}
+      <View style={styles.tabBar}>
+        <TouchableOpacity 
+          style={[styles.tabItem, activeTab === 'in_queue' && styles.tabItemActive]} 
+          onPress={() => setActiveTab('in_queue')}
+        >
+          <FontAwesome5 name="clock" size={12} color={activeTab === 'in_queue' ? '#38bdf8' : '#94a3b8'} style={{ marginRight: 4 }} />
+          <Text style={[styles.tabText, activeTab === 'in_queue' && styles.tabTextActive]} numberOfLines={1}>
+            Aguardando ({waitingList.length})
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.tabItem, activeTab === 'in_progress' && styles.tabItemActive]} 
+          onPress={() => setActiveTab('in_progress')}
+        >
+          <FontAwesome5 name="soap" size={12} color={activeTab === 'in_progress' ? '#0284c7' : '#94a3b8'} style={{ marginRight: 4 }} />
+          <Text style={[styles.tabText, activeTab === 'in_progress' && styles.tabTextActive]} numberOfLines={1}>
+            Lavando ({washingList.length})
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.tabItem, activeTab === 'completed' && styles.tabItemActive]} 
+          onPress={() => setActiveTab('completed')}
+        >
+          <FontAwesome5 name="check-circle" size={12} color={activeTab === 'completed' ? '#22c55e' : '#94a3b8'} style={{ marginRight: 4 }} />
+          <Text style={[styles.tabText, activeTab === 'completed' && styles.tabTextActive]} numberOfLines={1}>
+            Prontos ({finishedList.length})
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {loading ? (
+        <View style={styles.centerContainer}><ActivityIndicator size="large" color="#38bdf8" /></View>
+      ) : currentList.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <FontAwesome5 name="inbox" size={48} color="#334155" />
+          <Text style={styles.emptyText}>Nenhum veículo nesta fase.</Text>
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
+          {currentList.map((item) => (
+            <View key={item.id} style={styles.card}>
+              <View style={styles.cardInfo}>
+                <View style={styles.plateTag}><Text style={styles.plateText}>{item.plate}</Text></View>
+                <Text style={styles.vehicleTitle}>{item.brand ? `${item.brand} ` : ''}{item.model}</Text>
+                <Text style={styles.detailText}><FontAwesome5 name="phone" size={12} color="#94a3b8" /> {item.user_phone}</Text>
+                <Text style={styles.serviceText}>Serviço: {item.service_title}</Text>
+                
+                {activeTab !== 'in_queue' && (
+                  <Text style={styles.washerText}><FontAwesome5 name="user-cog" size={12} color="#38bdf8" /> Responsável: {item.washer_name}</Text>
+                )}
+                {activeTab === 'completed' && (
+                  <Text style={styles.durationText}><FontAwesome5 name="stopwatch" size={12} color="#22c55e" /> Tempo: {item.durationText}</Text>
+                )}
               </View>
 
-              <View style={styles.plateBadge}>
-                <Text style={styles.plateBadgeText}>{selectedItem.plate || 'SEM PLACA'}</Text>
-              </View>
-            </View>
-
-            {/* Exibição do QR Code Explícito */}
-            <View style={styles.qrCodeWrapper}>
-              <QRCode
-                value={selectedItem.id}
-                size={160}
-                color="#0f172a"
-                backgroundColor="#ffffff"
-              />
-              <Text style={styles.qrCodeHint}>Escaneie para validar a entrada no pátio</Text>
-            </View>
-
-            {/* Ações de Mudança de Status */}
-            <View style={styles.statusActionsRow}>
-              <TouchableOpacity
-                style={[styles.statusBtn, { backgroundColor: '#eab308' }]}
-                onPress={() => handleUpdateStatus(selectedItem.id, 'pending')}
-              >
-                <Text style={styles.statusBtnText}>Aguardando</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.statusBtn, { backgroundColor: '#0284c7' }]}
-                onPress={() => handleUpdateStatus(selectedItem.id, 'in_progress')}
-              >
-                <Text style={styles.statusBtnText}>Em Lavagem</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.statusBtn, { backgroundColor: '#16a34a' }]}
-                onPress={() => handleUpdateStatus(selectedItem.id, 'completed')}
-              >
-                <Text style={styles.statusBtnText}>Finalizar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          <View style={styles.emptyQrContainer}>
-            <FontAwesome5 name="qrcode" size={32} color="#64748b" />
-            <Text style={styles.emptyQrText}>Selecione um veículo da fila para ver o QR Code</Text>
-          </View>
-        )}
-
-        {/* Seção da Lista de Fila */}
-        <Text style={styles.sectionTitle}>Veículos no Pátio ({queueItems.length})</Text>
-
-        {loading ? (
-          <ActivityIndicator size="large" color="#38bdf8" style={{ marginTop: 20 }} />
-        ) : queueItems.length === 0 ? (
-          <View style={styles.emptyListContainer}>
-            <Text style={{ color: '#94a3b8' }}>Nenhum veículo na fila no momento.</Text>
-          </View>
-        ) : (
-          queueItems.map((item) => {
-            const badge = getStatusBadge(item.status);
-            const isSelected = selectedItem?.id === item.id;
-
-            return (
-              <TouchableOpacity
-                key={item.id}
-                style={[styles.queueItemCard, isSelected && styles.queueItemCardSelected]}
-                onPress={() => setSelectedItem(item)}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.itemTitle}>
-                    {item.brand} {item.model}
-                  </Text>
-                  <Text style={styles.itemSub}>{item.plate} • {item.service_type || 'Serviço'}</Text>
+              {activeTab === 'in_queue' && (
+                <View style={styles.qrWrapper}>
+                  <QRCode value={item.id} size={110} color="#0f172a" backgroundColor="#ffffff" />
                 </View>
-
-                <View style={{ alignItems: 'flex-end' }}>
-                  <View style={[styles.statusTag, { backgroundColor: badge.bg }]}>
-                    <Text style={[styles.statusTagText, { color: badge.color }]}>{badge.label}</Text>
-                  </View>
-                  <Text style={styles.itemPrice}>R$ {parseFloat(item.price || 0).toFixed(2)}</Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })
-        )}
-      </ScrollView>
+              )}
+            </View>
+          ))}
+        </ScrollView>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a', padding: 16 },
-  header: { flexDirection: 'row', alignItems: 'center', marginTop: 10, marginBottom: 16 },
-  backBtn: { width: 36, height: 36, backgroundColor: '#1e293b', borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#334155' },
+  header: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginTop: 10, 
+    marginBottom: 16 
+  },
   headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#f1f5f9' },
   headerSubtitle: { fontSize: 12, color: '#94a3b8' },
-  refreshBtn: { width: 36, height: 36, backgroundColor: '#1e293b', borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#334155' },
-  
-  qrCardContainer: { backgroundColor: '#1e293b', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#334155', marginBottom: 20 },
-  qrCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  qrCardTitle: { color: '#f1f5f9', fontSize: 16, fontWeight: 'bold' },
-  qrCardSub: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
-  plateBadge: { backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#38bdf8', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  plateBadgeText: { color: '#38bdf8', fontWeight: 'bold', fontSize: 12 },
-  
-  qrCodeWrapper: { backgroundColor: '#ffffff', padding: 16, borderRadius: 12, alignItems: 'center', alignSelf: 'center', width: '100%' },
-  qrCodeHint: { color: '#64748b', fontSize: 11, marginTop: 10, fontWeight: '600' },
-  
-  statusActionsRow: { flexDirection: 'row', gap: 8, marginTop: 16 },
-  statusBtn: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  statusBtnText: { color: '#ffffff', fontWeight: 'bold', fontSize: 11 },
-
-  emptyQrContainer: { backgroundColor: '#1e293b', borderRadius: 12, padding: 24, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: '#334155', marginBottom: 20 },
-  emptyQrText: { color: '#94a3b8', fontSize: 13, marginTop: 8 },
-
-  sectionTitle: { color: '#f1f5f9', fontSize: 16, fontWeight: 'bold', marginBottom: 12 },
-  emptyListContainer: { paddingVertical: 20, alignItems: 'center' },
-
-  queueItemCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#1e293b', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#334155', marginBottom: 8 },
-  queueItemCardSelected: { borderColor: '#38bdf8', backgroundColor: '#162032' },
-  itemTitle: { color: '#f1f5f9', fontWeight: 'bold', fontSize: 14 },
-  itemSub: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
-  statusTag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginBottom: 4 },
-  statusTagText: { fontSize: 10, fontWeight: 'bold' },
-  itemPrice: { color: '#34d399', fontSize: 13, fontWeight: 'bold' },
+  refreshBtn: { 
+    width: 36, 
+    height: 36, 
+    backgroundColor: '#1e293b', 
+    borderRadius: 18, 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    borderWidth: 1, 
+    borderColor: '#334155' 
+  },
+  tabBar: { 
+    flexDirection: 'row', 
+    backgroundColor: '#1e293b', 
+    borderRadius: 12, 
+    padding: 4, 
+    marginBottom: 16, 
+    borderWidth: 1, 
+    borderColor: '#334155',
+    gap: 4
+  },
+  tabItem: { 
+    flex: 1, 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    paddingVertical: 10, 
+    paddingHorizontal: 4,
+    borderRadius: 8 
+  },
+  tabItemActive: { 
+    backgroundColor: '#0f172a', 
+    borderWidth: 1, 
+    borderColor: '#38bdf8' 
+  },
+  tabText: { color: '#94a3b8', fontSize: 11, fontWeight: '600' },
+  tabTextActive: { color: '#ffffff', fontWeight: 'bold' },
+  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
+  emptyText: { color: '#64748b', marginTop: 12, fontSize: 16 },
+  card: { flexDirection: 'row', backgroundColor: '#1e293b', borderRadius: 14, borderWidth: 1, borderColor: '#334155', padding: 16, marginBottom: 12, alignItems: 'center', justifyContent: 'space-between' },
+  cardInfo: { flex: 1, marginRight: 12 },
+  plateTag: { backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#38bdf8', alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, marginBottom: 8 },
+  plateText: { color: '#38bdf8', fontWeight: 'bold', fontSize: 14, letterSpacing: 1 },
+  vehicleTitle: { color: '#f1f5f9', fontSize: 18, fontWeight: 'bold', marginBottom: 4 },
+  detailText: { color: '#cbd5e1', fontSize: 13, marginTop: 2 },
+  serviceText: { color: '#38bdf8', fontSize: 13, fontWeight: '600', marginTop: 4 },
+  washerText: { color: '#93c5fd', fontSize: 13, fontWeight: '600', marginTop: 6 },
+  durationText: { color: '#4ade80', fontSize: 13, fontWeight: 'bold', marginTop: 4 },
+  qrWrapper: { backgroundColor: '#ffffff', padding: 8, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
 });

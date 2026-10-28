@@ -6,7 +6,6 @@ import {
   FlatList,
   TouchableOpacity,
   Modal,
-  Alert,
   ActivityIndicator,
   TextInput,
   ScrollView,
@@ -77,75 +76,56 @@ export default function AdminAppointmentsScreen({ navigation }: any) {
     try {
       setLoading(true);
 
-      const { data: rawAppointments, error } = await supabase
-        .from('appointments')
-        .select('*');
-
+      const { data: rawAppointments, error } = await supabase.from('appointments').select('*');
       if (error) throw error;
 
-      const vehicleIds = Array.from(
-        new Set((rawAppointments || []).map((a: any) => a.vehicle_id).filter(Boolean))
-      );
-      const userIds = Array.from(
-        new Set((rawAppointments || []).map((a: any) => a.user_id).filter(Boolean))
-      );
+      const formatted = await Promise.all(
+        (rawAppointments || []).map(async (item: any) => {
+          let veh: any = {};
+          let prof: any = {};
 
-      let vehiclesMap: Record<string, any> = {};
-      if (vehicleIds.length > 0) {
-        const { data: vData } = await supabase.from('vehicles').select('*').in('id', vehicleIds);
-        (vData || []).forEach((v: any) => {
-          vehiclesMap[v.id] = v;
-        });
-      }
-
-      let profilesMap: Record<string, any> = {};
-      if (userIds.length > 0) {
-        const { data: pData } = await supabase.from('profiles').select('*').in('id', userIds);
-        (pData || []).forEach((p: any) => {
-          profilesMap[p.id] = p;
-        });
-      }
-
-      const formatted: Appointment[] = (rawAppointments || []).map((item: any) => {
-        const veh = vehiclesMap[item.vehicle_id] || {};
-        const prof = profilesMap[item.user_id] || {};
-
-        let timeFormatted = '--:--';
-        let dateFormatted = '';
-        let dateISO = '';
-
-        if (item.scheduled_at) {
-          const dateObj = new Date(item.scheduled_at);
-          if (!isNaN(dateObj.getTime())) {
-            const hours = String(dateObj.getHours()).padStart(2, '0');
-            const minutes = String(dateObj.getMinutes()).padStart(2, '0');
-            timeFormatted = `${hours}:${minutes}`;
-
-            const year = dateObj.getFullYear();
-            const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-            const day = String(dateObj.getDate()).padStart(2, '0');
-
-            dateISO = `${year}-${month}-${day}`;
-            dateFormatted = `${day}/${month}/${year}`;
+          if (item.vehicle_id) {
+            const { data: vData } = await supabase.from('vehicles').select('*').eq('id', item.vehicle_id).single();
+            if (vData) veh = vData;
           }
-        }
 
-        return {
-          id: item.id,
-          user_name: prof.full_name || prof.name || prof.nome || 'Cliente',
-          user_phone: prof.phone || prof.telefone || 'Sem telefone',
-          plate: veh.plate || veh.placa || 'SEM PLACA',
-          brand: veh.brand || veh.marca || '',
-          model: veh.model || veh.modelo || 'Veículo',
-          category: (veh.category || veh.categoria || 'pequeno').toLowerCase(),
-          service_title: item.service_type || 'Serviço Geral',
-          price: parseFloat(item.price || 0),
-          dateStr: dateISO,
-          dateFormatted: dateFormatted,
-          time: timeFormatted,
-          status: item.status ? String(item.status).toLowerCase() : 'pending',
-        };
-      });
+          if (item.user_id) {
+            const { data: pData } = await supabase.from('profiles').select('*').eq('id', item.user_id).single();
+            if (pData) prof = pData;
+          }
+
+          let timeFormatted = '--:--';
+          let dateFormatted = '';
+          let dateISO = '';
+
+          if (item.scheduled_at) {
+            const dateObj = new Date(item.scheduled_at);
+            if (!isNaN(dateObj.getTime())) {
+              timeFormatted = `${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}`;
+              const y = dateObj.getFullYear();
+              const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+              const d = String(dateObj.getDate()).padStart(2, '0');
+              dateISO = `${y}-${m}-${d}`;
+              dateFormatted = `${d}/${m}/${y}`;
+            }
+          }
+
+          return {
+            id: item.id,
+            user_name: prof.full_name || item.user_name || 'Cliente Sem Nome',
+            user_phone: prof.phone || item.user_phone || 'Sem Telefone',
+            plate: (veh.plate || item.plate || 'SEM PLACA').toUpperCase(),
+            brand: veh.brand || item.brand || '',
+            model: veh.model || item.model || 'Veículo',
+            service_title: item.service_type || 'Serviço',
+            price: parseFloat(item.price || 0),
+            dateStr: dateISO,
+            dateFormatted,
+            time: timeFormatted,
+            status: item.status || 'pending',
+          };
+        })
+      );
 
       setAppointments(formatted);
     } catch (error: any) {
@@ -155,81 +135,119 @@ export default function AdminAppointmentsScreen({ navigation }: any) {
     }
   };
 
+  const formatAppointmentItem = (item: any, veh: any, prof: any): Appointment => {
+    let timeFormatted = '--:--';
+    let dateFormatted = '';
+    let dateISO = '';
+
+    if (item.scheduled_at) {
+      const dateObj = new Date(item.scheduled_at);
+      if (!isNaN(dateObj.getTime())) {
+        const hours = String(dateObj.getHours()).padStart(2, '0');
+        const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+        timeFormatted = `${hours}:${minutes}`;
+
+        const year = dateObj.getFullYear();
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const day = String(dateObj.getDate()).padStart(2, '0');
+
+        dateISO = `${year}-${month}-${day}`;
+        dateFormatted = `${day}/${month}/${year}`;
+      }
+    }
+
+    return {
+      id: item.id,
+      user_name: prof.full_name || prof.name || prof.nome || item.user_name || 'Cliente',
+      user_phone: prof.phone || prof.telefone || item.user_phone || 'Sem telefone',
+      plate: (veh.plate || veh.placa || item.plate || item.placa || 'SEM PLACA').toUpperCase(),
+      brand: veh.brand || veh.marca || item.brand || item.marca || '',
+      model: veh.model || veh.modelo || item.model || item.modelo || 'Veículo',
+      category: (veh.category || veh.categoria || 'pequeno').toLowerCase(),
+      service_title: item.service_type || item.service_title || 'Serviço Geral',
+      price: parseFloat(item.price || 0),
+      dateStr: dateISO,
+      dateFormatted: dateFormatted,
+      time: timeFormatted,
+      status: item.status ? String(item.status).toLowerCase() : 'pending',
+    };
+  };
+
   useEffect(() => {
     loadAppointments();
   }, []);
 
-  // Cancelar diretamente sem mensagem de confirmação (funciona no PC e Mobile)
   const handleCancel = async (id: string) => {
-  try {
-    // Atualização instantânea da UI
-    setAppointments((prev) =>
-      prev.map((app) => (app.id === id ? { ...app, status: 'cancelled' } : app))
-    );
-
-    // Envia 'cancelled' em inglês para respeitar a constraint do Postgres
-    const { error } = await supabase
-      .from('appointments')
-      .update({ status: 'cancelled' })
-      .eq('id', id);
-
-    if (error) {
-      loadAppointments();
-      console.error('Erro ao cancelar agendamento:', error);
-    }
-  } catch (error) {
-    console.error('Erro de conexão ao cancelar:', error);
-  }
- };
-
-  // Rollback (Restaurar Agendamento Cancelado)
-  const handleRollback = async (id: string) => {
-  try {
-    setAppointments((prev) =>
-      prev.map((app) => (app.id === id ? { ...app, status: 'pending' } : app))
-    );
-
-    const { error } = await supabase
-      .from('appointments')
-      .update({ status: 'pending' })
-      .eq('id', id);
-
-    if (error) {
-      loadAppointments();
-      console.error('Erro ao restaurar agendamento:', error);
-    }
-  } catch (error) {
-    console.error('Erro ao restaurar agendamento:', error);
-  }
- };
-
-  // Envia para a Tela de Fila / Lavagem (com fallback seguro caso a tela ainda não exista)
-  const handleGoToQueue = (app: Appointment) => {
     try {
+      setAppointments((prev) =>
+        prev.map((app) => (app.id === id ? { ...app, status: 'cancelled' } : app))
+      );
+
+      const { error } = await supabase
+        .from('appointments')
+        .update({ status: 'cancelled' })
+        .eq('id', id);
+
+      if (error) loadAppointments();
+    } catch (error) {
+      console.error('Erro ao cancelar:', error);
+    }
+  };
+
+  const handleRollback = async (id: string) => {
+    try {
+      setAppointments((prev) =>
+        prev.map((app) => (app.id === id ? { ...app, status: 'pending' } : app))
+      );
+
+      const { error } = await supabase
+        .from('appointments')
+        .update({ status: 'pending' })
+        .eq('id', id);
+
+      if (error) loadAppointments();
+    } catch (error) {
+      console.error('Erro ao restaurar:', error);
+    }
+  };
+
+  // FAZ O CHECK-IN: Atualiza status para 'in_queue' e envia para a Fila
+  const handleGoToQueue = async (app: Appointment) => {
+    try {
+      setAppointments((prev) =>
+        prev.map((a) => (a.id === app.id ? { ...a, status: 'in_queue' } : a))
+      );
+
+      await supabase
+        .from('appointments')
+        .update({ status: 'in_queue' })
+        .eq('id', app.id);
+
       if (navigation && typeof navigation.navigate === 'function') {
-        navigation.navigate('AdminQueueScreen', { appointment: app });
+        navigation.navigate('Fila');
       }
     } catch (e) {
-      console.warn('Tela AdminQueueScreen ainda não registrada nas rotas de navegação.');
+      console.error('Erro ao enviar para a fila:', e);
     }
   };
 
   const todayStr = getTodayISO();
 
+  // Apenas agendamentos com status pending para a lista de hoje
   const todayActiveAppointments = appointments.filter(
-    (app) => app.dateStr === todayStr && app.status !== 'cancelado' && app.status !== 'cancelled'
+    (app) => app.dateStr === todayStr && app.status === 'pending'
   );
 
   const futureAppointments = appointments.filter(
-    (app) => app.dateStr > todayStr && app.status !== 'cancelado' && app.status !== 'cancelled'
+    (app) => app.dateStr > todayStr && app.status !== 'cancelled'
   );
 
   const pastAppointments = appointments.filter(
-    (app) => app.dateStr < todayStr && app.status !== 'cancelado' && app.status !== 'cancelled'
+    (app) => app.dateStr < todayStr && app.status !== 'cancelled'
   );
 
   const cancelledAppointments = appointments.filter(
-    (app) => app.status === 'cancelado' || app.status === 'cancelled'
+    (app) => app.status === 'cancelled' || app.status === 'cancelado'
   );
 
   const filteredTodayAppointments = todayActiveAppointments.filter(
@@ -248,7 +266,6 @@ export default function AdminAppointmentsScreen({ navigation }: any) {
       app.user_name.toLowerCase().includes(dateSearchQuery.toLowerCase())
   );
 
-  // Lógica do Calendário
   const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
   const getFirstDayOfWeek = (year: number, month: number) => new Date(year, month, 1).getDay();
 
@@ -340,7 +357,7 @@ export default function AdminAppointmentsScreen({ navigation }: any) {
                 </View>
 
                 <View style={styles.statusBadge}>
-                  <Text style={styles.statusText}>AGUARDANDO</Text>
+                  <Text style={styles.statusText}>AGUARDANDO CHECK-IN</Text>
                 </View>
               </View>
 
@@ -366,7 +383,7 @@ export default function AdminAppointmentsScreen({ navigation }: any) {
               <View style={styles.cardActions}>
                 <TouchableOpacity style={styles.checkInBtn} onPress={() => handleGoToQueue(item)}>
                   <FontAwesome5 name="stream" size={14} color="#ffffff" style={{ marginRight: 6 }} />
-                  <Text style={styles.checkInBtnText}>Enviar para Fila de Lavagem</Text>
+                  <Text style={styles.checkInBtnText}>Realizar Check-in</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.cancelBtn} onPress={() => handleCancel(item.id)}>
@@ -389,7 +406,6 @@ export default function AdminAppointmentsScreen({ navigation }: any) {
               </TouchableOpacity>
             </View>
 
-            {/* Alternador Futuros vs Histórico */}
             <View style={styles.tabToggleRow}>
               <TouchableOpacity
                 style={[styles.tabBtn, modalTab === 'futuros' && styles.tabBtnActive]}
@@ -422,7 +438,6 @@ export default function AdminAppointmentsScreen({ navigation }: any) {
               </TouchableOpacity>
             </View>
 
-            {/* Campo de Data com Calendário */}
             <View style={[styles.searchContainer, { marginTop: 12, marginBottom: 8 }]}>
               <TouchableOpacity style={{ paddingRight: 8 }} onPress={() => setCalendarModalVisible(true)}>
                 <FontAwesome5 name="calendar-alt" size={18} color="#38bdf8" />
@@ -445,7 +460,6 @@ export default function AdminAppointmentsScreen({ navigation }: any) {
               )}
             </View>
 
-            {/* Lista Filtrada */}
             {filteredModalList.length === 0 ? (
               <View style={{ paddingVertical: 30, alignItems: 'center' }}>
                 <Text style={{ color: '#94a3b8', fontSize: 13 }}>
@@ -474,7 +488,7 @@ export default function AdminAppointmentsScreen({ navigation }: any) {
         </View>
       </Modal>
 
-      {/* Modal do Calendário Visual Estilizado */}
+      {/* Modal do Calendário */}
       <Modal visible={calendarModalVisible} animationType="fade" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={styles.calendarModalCard}>
@@ -529,7 +543,7 @@ export default function AdminAppointmentsScreen({ navigation }: any) {
         </View>
       </Modal>
 
-      {/* Modal Cancelados com Opção de Rollback */}
+      {/* Modal Cancelados */}
       <Modal visible={cancelledModalVisible} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { maxHeight: '80%' }]}>
