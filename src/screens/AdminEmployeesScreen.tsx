@@ -27,6 +27,7 @@ export default function AdminEmployeesScreen() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [cpf, setCpf] = useState('');
+  const [password, setPassword] = useState('');
   const [role, setRole] = useState('Lavador');
   const [saving, setSaving] = useState(false);
 
@@ -79,6 +80,7 @@ export default function AdminEmployeesScreen() {
     setEmail('');
     setPhone('');
     setCpf('');
+    setPassword('');
     setRole('Lavador');
     setModalVisible(true);
   };
@@ -88,6 +90,7 @@ export default function AdminEmployeesScreen() {
     setFullName(item.full_name || '');
     setEmail(item.email || '');
     setPhone(item.phone || '');
+    setPassword(item.password || ''); // Carrega a senha existente se houver
     
     const rawCpf = item.cpf || '';
     if (rawCpf.length === 11) {
@@ -109,14 +112,19 @@ export default function AdminEmployeesScreen() {
       Alert.alert('Atenção', 'Informe um CPF válido para o login do funcionário.');
       return;
     }
+    if (!password.trim()) {
+      Alert.alert('Atenção', 'Informe uma senha para o acesso do funcionário.');
+      return;
+    }
 
     try {
       setSaving(true);
-      const payload = {
+      const payload: any = {
         full_name: fullName,
         email,
         phone,
         cpf: cpf.replace(/\D/g, ''),
+        password, // Salva a senha cadastrada pelo admin
         role,
       };
 
@@ -225,7 +233,7 @@ export default function AdminEmployeesScreen() {
         />
       )}
 
-      {/* Modal de Cadastro / Edição com KeyboardAvoidingView e ScrollView */}
+      {/* Modal de Cadastro / Edição com Campo de Senha */}
       <Modal visible={modalVisible} animationType="slide" transparent={true}>
         <KeyboardAvoidingView 
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
@@ -258,6 +266,16 @@ export default function AdminEmployeesScreen() {
                 maxLength={14}
                 value={cpf}
                 onChangeText={handleCpfChange}
+              />
+
+              <Text style={styles.label}>Senha de Acesso *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Digite a senha do funcionário"
+                placeholderTextColor="#64748b"
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
               />
 
               <Text style={styles.label}>Cargo / Função</Text>

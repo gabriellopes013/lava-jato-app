@@ -25,15 +25,23 @@ export const getAdminServices = async (): Promise<ServiceItem[]> => {
 };
 
 export const createAdminService = async (service: Omit<ServiceItem, 'id' | 'admin_id'>) => {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Usuário não autenticado');
+  // Tenta pegar a sessão atual de forma mais direta para evitar falhas rápidas de token
+  const { data: sessionData } = await supabase.auth.getSession();
+  const user = sessionData?.session?.user;
+
+  // Se não encontrar na sessão, tenta pegar via getUser()
+  let userId = user?.id;
+  if (!userId) {
+    const { data: userData } = await supabase.auth.getUser();
+    userId = userData?.user?.id;
+  }
 
   const { data, error } = await supabase
     .from('services')
     .insert([
       {
         ...service,
-        admin_id: user.id,
+        admin_id: userId || null, // Salva o ID se existir, ou null para evitar travar caso a sessão demore
         active: true,
       },
     ])

@@ -1,42 +1,89 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Platform } from 'react-native';
 import { FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { supabase } from '../services/supabase';
 
 export default function LoginScreen({ navigation }: any) {
-  const [email, setEmail] = useState('');
+  const [emailOrCpf, setEmailOrCpf] = useState('');
   const [senha, setSenha] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Alerta universal para Web e Mobile
+  const showAlert = (title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}: ${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
+
   const handleLogin = async () => {
-    if (!email || !senha) {
-      Alert.alert('Erro', 'Por favor, preencha o e-mail e a senha.');
+    if (!emailOrCpf || !senha) {
+      showAlert('Erro', 'Por favor, preencha o e-mail/CPF e a senha.');
       return;
     }
 
     setLoading(true);
+
+    const cleanInput = emailOrCpf.trim();
+    
+    // Identifica se é CPF estritamente se tiver 11 dígitos numéricos ou formatação típica de CPF (com ponto/traço e tamanho de CPF)
+    const rawNumbers = cleanInput.replace(/\D/g, '');
+    const isCpf = rawNumbers.length === 11 && (cleanInput.includes('.') || cleanInput.includes('-') || cleanInput.length === 11);
+
+    // SE FOR CPF -> FLUXO DE LOGIN DE FUNCIONÁRIO
+    if (isCpf) {
+      const { data: employeeData, error: employeeError } = await supabase
+        .from('employees')
+        .select('*')
+        .eq('cpf', rawNumbers)
+        .single();
+
+      setLoading(false);
+
+      if (employeeError || !employeeData) {
+        showAlert('Erro no login', 'Funcionário não encontrado com este CPF.');
+        return;
+      }
+
+      if (!employeeData.active) {
+        showAlert('Acesso Negado', 'Sua conta de funcionário está desativada.');
+        return;
+      }
+
+      if (employeeData.password !== senha) {
+        showAlert('Erro no login', 'Senha incorreta.');
+        return;
+      }
+
+      navigation.replace('EmployeeHome', { employeeId: employeeData.id });
+      return;
+    }
+
+    // SE FOR E-MAIL -> FLUXO NORMAL DE CLIENTE / ADMIN (VIA SUPABASE AUTH)
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email,
+      email: cleanInput,
       password: senha,
     });
 
     if (authError) {
       setLoading(false);
-      Alert.alert('Erro no login', authError.message);
+      showAlert('Erro no login', authError.message);
       return;
     }
 
-    // Busca o perfil na tabela 'profiles' para validar a role
+    const userId = authData.user.id;
+
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
       .select('role')
-      .eq('id', authData.user.id)
+      .eq('id', userId)
       .single();
 
     setLoading(false);
 
     if (profileError) {
-      Alert.alert('Erro', 'Não foi possível identificar o perfil do usuário.');
+      showAlert('Erro', 'Não foi possível identificar o perfil do usuário.');
       return;
     }
 
@@ -45,7 +92,7 @@ export default function LoginScreen({ navigation }: any) {
     } else if (profileData?.role === 'admin') {
       navigation.replace('AdminHome');
     } else {
-      Alert.alert('Erro', 'Tipo de conta desconhecido.');
+      showAlert('Erro', 'Tipo de conta desconhecido.');
     }
   };
 
@@ -62,19 +109,18 @@ export default function LoginScreen({ navigation }: any) {
           <Text style={styles.subtitle}>Insira suas credenciais para continuar</Text>
         </View>
 
-        {/* E-mail */}
+        {/* E-mail ou CPF */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>E-mail *</Text>
+          <Text style={styles.label}>E-mail ou CPF *</Text>
           <View style={styles.inputContainer}>
-            <FontAwesome5 name="envelope" size={16} color="#64748b" style={styles.inputIcon} />
+            <FontAwesome5 name="user" size={16} color="#64748b" style={styles.inputIcon} />
             <TextInput
               style={styles.input}
-              placeholder="seu@email.com"
+              placeholder="E-mail (Admin/Cliente) ou CPF (Funcionário)"
               placeholderTextColor="#64748b"
-              keyboardType="email-address"
               autoCapitalize="none"
-              value={email}
-              onChangeText={setEmail}
+              value={emailOrCpf}
+              onChangeText={setEmailOrCpf}
             />
           </View>
         </View>

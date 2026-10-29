@@ -18,7 +18,7 @@ import {
   getAppointments,
   getServicesByCategory,
   getOperatingHours,
-  generateAvailableSlots,
+  getAvailableSlotsFiltered,
   createAppointment,
   cancelAppointment,
   Appointment,
@@ -58,6 +58,15 @@ export default function AppointmentsScreen() {
   const translateYStep3 = useRef(new Animated.Value(20)).current;
   const translateYStep4 = useRef(new Animated.Value(20)).current;
 
+  // Função helper universal para exibir alertas na Web e no Mobile
+  const showAlert = (title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}: ${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
+
   const triggerFadeAndSlide = (opacityVal: Animated.Value, translateVal: Animated.Value) => {
     opacityVal.setValue(0);
     translateVal.setValue(20);
@@ -91,7 +100,7 @@ export default function AppointmentsScreen() {
       setVehicles(vehData);
       setOperatingHours(opData);
     } catch (error) {
-      Alert.alert('Erro', 'Falha ao carregar dados de agendamento.');
+      showAlert('Erro', 'Falha ao carregar dados de agendamento.');
     } finally {
       setLoading(false);
     }
@@ -154,32 +163,68 @@ export default function AppointmentsScreen() {
     triggerFadeAndSlide(fadeStep4, translateYStep4);
   };
 
-  // Recalcular horários quando data ou serviço mudarem
+  // Recalcular horários filtrados quando data ou serviço mudarem (bloqueando horários passados do dia de hoje)
   useEffect(() => {
-    if (!selectedService || !selectedDate) return;
+    const fetchSlots = async () => {
+      if (!selectedService || !selectedDate) return;
 
-    const dayOfWeek = selectedDate.getDay();
-    const dayConfig = operatingHours.find((h) => h.day_of_week === dayOfWeek);
+      const dayOfWeek = selectedDate.getDay();
+      const dayConfig = operatingHours.find((h) => h.day_of_week === dayOfWeek);
 
-    const openTime = dayConfig?.open_time || '08:00';
-    const closeTime = dayConfig?.close_time || '18:00';
-    const closed = dayConfig ? dayConfig.is_closed : dayOfWeek === 0;
+      const openTime = dayConfig?.open_time || '08:00';
+      const closeTime = dayConfig?.close_time || '18:00';
+      const closed = dayConfig ? dayConfig.is_closed : dayOfWeek === 0;
 
-    setIsClosedDay(closed);
+      setIsClosedDay(closed);
 
-    if (!closed) {
-      const slots = generateAvailableSlots(openTime, closeTime, selectedService.duration_minutes);
-      setAvailableSlots(slots);
-      setSelectedSlot(slots.length > 0 ? slots[0] : '');
-    } else {
-      setAvailableSlots([]);
-      setSelectedSlot('');
-    }
+      if (!closed) {
+        const year = selectedDate.getFullYear();
+        const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+        const day = String(selectedDate.getDate()).padStart(2, '0');
+        const dateStr = `${year}-${month}-${day}`;
+
+        try {
+          let slots = await getAvailableSlotsFiltered(
+            dateStr,
+            openTime,
+            closeTime,
+            selectedService.duration_minutes
+          );
+
+          // Validação: Se a data selecionada for hoje, remove horários que já passaram
+          const now = new Date();
+          const isToday = selectedDate.toDateString() === now.toDateString();
+          if (isToday) {
+            const currentHour = now.getHours();
+            const currentMinute = now.getMinutes();
+            const currentTimeValue = currentHour * 60 + currentMinute;
+
+            slots = slots.filter((slot) => {
+              const [h, m] = slot.split(':').map(Number);
+              const slotTimeValue = h * 60 + m;
+              return slotTimeValue > currentTimeValue;
+            });
+          }
+
+          setAvailableSlots(slots);
+          setSelectedSlot(slots.length > 0 ? slots[0] : '');
+        } catch (e) {
+          console.error('Erro ao buscar slots disponíveis:', e);
+          setAvailableSlots([]);
+          setSelectedSlot('');
+        }
+      } else {
+        setAvailableSlots([]);
+        setSelectedSlot('');
+      }
+    };
+
+    fetchSlots();
   }, [selectedDate, selectedService, operatingHours]);
 
   const handleCreateAppointment = async () => {
     if (!selectedVehicle || !selectedService || !selectedDate || !selectedSlot || isClosedDay) {
-      Alert.alert('Atenção', 'Por favor, complete todas as etapas do agendamento.');
+      showAlert('Atenção', 'Por favor, complete todas as etapas do agendamento.');
       return;
     }
 
@@ -192,28 +237,29 @@ export default function AppointmentsScreen() {
 
       await createAppointment({
         vehicle_id: selectedVehicle.id!,
-        service_type: selectedService.name,
+        service_type: selectedService.name || selectedService.title || 'Serviço',
         price: selectedService.price,
         scheduled_at: scheduledDateTime.toISOString(),
+        duration_minutes: selectedService.duration_minutes,
       });
 
-      Alert.alert('Sucesso', 'Agendamento realizado!');
+      showAlert('Sucesso', 'Agendamento realizado!');
       setModalVisible(false);
       loadData();
     } catch (error: any) {
-      Alert.alert('Erro', error.message || 'Falha ao agendar.');
+      showAlert('Erro', error.message || 'Falha ao agendar.');
     } finally {
       setSaving(false);
     }
   };
 
-  // Cancelamento Direto sem Alerta
+  // Cancelamento Direto
   const handleCancel = async (id: string) => {
     try {
       await cancelAppointment(id);
       loadData();
     } catch (error) {
-      Alert.alert('Erro', 'Não foi possível cancelar.');
+      showAlert('Erro', 'Não foi possível cancelar.');
     }
   };
 
@@ -371,7 +417,7 @@ export default function AppointmentsScreen() {
                     style={[styles.optionItem, selectedVehicle?.id === v.id && styles.optionSelected]}
                     onPress={() => handleSelectVehicle(v)}
                   >
-                    <Text style={styles.optionText}>{v.brand} {v.model} - {v.plate}</Text>
+                    <Text style={styles.optionText}>{v.brand} {v.model} ({v.plate})</Text>
                     <Text style={styles.subOptionText}>Categoria: {v.category.toUpperCase()}</Text>
                   </TouchableOpacity>
                 ))
@@ -395,7 +441,7 @@ export default function AppointmentsScreen() {
                         onPress={() => handleSelectService(s)}
                       >
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.optionText}>{s.name}</Text>
+                          <Text style={styles.optionText}>{s.name || s.title}</Text>
                           <Text style={styles.durationText}>⏱ Duração: {s.duration_minutes} min</Text>
                         </View>
                         <Text style={styles.servicePrice}>R$ {Number(s.price).toFixed(2)}</Text>
@@ -456,7 +502,7 @@ export default function AppointmentsScreen() {
                     <>
                       <Text style={[styles.label, { marginTop: 16 }]}>4. Horários Disponíveis *</Text>
                       {availableSlots.length === 0 ? (
-                        <Text style={styles.warningText}>Sem horários disponíveis para este dia.</Text>
+                        <Text style={styles.warningText}>Sem horários disponíveis para este dia (Capacidade esgotada ou horários passados).</Text>
                       ) : (
                         <View style={styles.slotsGrid}>
                           {availableSlots.map((slot) => (

@@ -10,6 +10,7 @@ import {
   Alert,
   ActivityIndicator,
   Switch,
+  Platform,
 } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import {
@@ -33,13 +34,22 @@ export default function AdminServicesScreen() {
   const [price, setPrice] = useState('');
   const [durationMinutes, setDurationMinutes] = useState('30');
 
+  // Função helper segura para exibir alertas tanto na Web quanto no Mobile
+  const showAlert = (title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${title}: ${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
+
   const loadServices = async () => {
     try {
       setLoading(true);
       const data = await getAdminServices();
       setServices(data);
     } catch (error) {
-      Alert.alert('Erro', 'Não foi possível carregar os serviços.');
+      showAlert('Erro', 'Não foi possível carregar os serviços.');
     } finally {
       setLoading(false);
     }
@@ -69,7 +79,7 @@ export default function AdminServicesScreen() {
 
   const handleSave = async () => {
     if (!name || !price || !durationMinutes) {
-      Alert.alert('Atenção', 'Preencha o nome, preço e duração.');
+      showAlert('Atenção', 'Preencha o nome, preço e duração.');
       return;
     }
 
@@ -85,7 +95,7 @@ export default function AdminServicesScreen() {
           price: parsedPrice,
           duration_minutes: parsedDuration,
         });
-        Alert.alert('Sucesso', 'Serviço atualizado!');
+        showAlert('Sucesso', 'Serviço atualizado!');
       } else {
         await createAdminService({
           name,
@@ -93,13 +103,13 @@ export default function AdminServicesScreen() {
           price: parsedPrice,
           duration_minutes: parsedDuration,
         });
-        Alert.alert('Sucesso', 'Novo serviço cadastrado!');
+        showAlert('Sucesso', 'Novo serviço cadastrado!');
       }
 
       setModalVisible(false);
       loadServices();
     } catch (error: any) {
-      Alert.alert('Erro', error.message || 'Falha ao salvar serviço.');
+      showAlert('Erro', error.message || 'Falha ao salvar serviço.');
     } finally {
       setSaving(false);
     }
@@ -126,7 +136,7 @@ export default function AdminServicesScreen() {
           service.id === id ? { ...service, active: currentStatus } : service
         )
       );
-      Alert.alert('Erro', 'Não foi possível alterar o status do serviço.');
+      showAlert('Erro', 'Não foi possível alterar o status do serviço.');
     }
   };
 
@@ -136,7 +146,7 @@ export default function AdminServicesScreen() {
       await deleteAdminService(id);
       loadServices();
     } catch (error) {
-      Alert.alert('Erro', 'Falha ao deletar serviço.');
+      showAlert('Erro', 'Falha ao deletar serviço.');
     }
   };
 

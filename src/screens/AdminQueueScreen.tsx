@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
-import QRCode from 'react-native-qrcode-svg';
 import { supabase } from '../services/supabase';
 
 export default function AdminQueueScreen() {
@@ -28,11 +27,11 @@ export default function AdminQueueScreen() {
       const { data: rawAppointments, error } = await supabase.from('appointments').select('*');
       if (error) throw error;
 
-      // Busca os veículos e perfis de forma segura um a um ou em lote limpo
       const formatted = await Promise.all(
         (rawAppointments || []).map(async (item: any) => {
           let veh: any = {};
           let prof: any = {};
+          let washerName = 'Não atribuído';
 
           if (item.vehicle_id) {
             const { data: vData } = await supabase.from('vehicles').select('*').eq('id', item.vehicle_id).single();
@@ -42,6 +41,11 @@ export default function AdminQueueScreen() {
           if (item.user_id) {
             const { data: pData } = await supabase.from('profiles').select('*').eq('id', item.user_id).single();
             if (pData) prof = pData;
+          }
+
+          if (item.employee_id) {
+            const { data: eData } = await supabase.from('employees').select('*').eq('id', item.employee_id).single();
+            if (eData) washerName = eData.full_name || eData.name || 'Funcionário';
           }
 
           let dateISO = '';
@@ -70,7 +74,7 @@ export default function AdminQueueScreen() {
             service_title: item.service_type || 'Serviço Geral',
             status: item.status || 'pending',
             dateStr: dateISO,
-            washer_name: item.washer_name || 'Lavador Automático',
+            washer_name: washerName,
             durationText,
           };
         })
@@ -88,7 +92,7 @@ export default function AdminQueueScreen() {
 
   const todayStr = getTodayISO();
 
-  const waitingList = appointments.filter((a) => a.dateStr === todayStr && a.status === 'in_queue');
+  const waitingList = appointments.filter((a) => a.dateStr === todayStr && (a.status === 'in_queue' || a.status === 'pending'));
   const washingList = appointments.filter((a) => a.dateStr === todayStr && a.status === 'in_progress');
   const finishedList = appointments.filter((a) => a.dateStr === todayStr && a.status === 'completed');
 
@@ -96,7 +100,7 @@ export default function AdminQueueScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header alinhado corretamente igual às outras telas */}
+      {/* Header */}
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Painel do Pátio</Text>
@@ -107,7 +111,7 @@ export default function AdminQueueScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Navegação de Abas Responsiva */}
+      {/* Navegação de Abas */}
       <View style={styles.tabBar}>
         <TouchableOpacity 
           style={[styles.tabItem, activeTab === 'in_queue' && styles.tabItemActive]} 
@@ -164,12 +168,6 @@ export default function AdminQueueScreen() {
                   <Text style={styles.durationText}><FontAwesome5 name="stopwatch" size={12} color="#22c55e" /> Tempo: {item.durationText}</Text>
                 )}
               </View>
-
-              {activeTab === 'in_queue' && (
-                <View style={styles.qrWrapper}>
-                  <QRCode value={item.id} size={110} color="#0f172a" backgroundColor="#ffffff" />
-                </View>
-              )}
             </View>
           ))}
         </ScrollView>
@@ -237,5 +235,4 @@ const styles = StyleSheet.create({
   serviceText: { color: '#38bdf8', fontSize: 13, fontWeight: '600', marginTop: 4 },
   washerText: { color: '#93c5fd', fontSize: 13, fontWeight: '600', marginTop: 6 },
   durationText: { color: '#4ade80', fontSize: 13, fontWeight: 'bold', marginTop: 4 },
-  qrWrapper: { backgroundColor: '#ffffff', padding: 8, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
 });
